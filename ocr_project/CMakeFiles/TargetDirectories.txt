@@ -1,0 +1,3 @@
+/workspaces/smartp_pen0/ocr_project/CMakeFiles/run.dir
+/workspaces/smartp_pen0/ocr_project/CMakeFiles/edit_cache.dir
+/workspaces/smartp_pen0/ocr_project/CMakeFiles/rebuild_cache.dir

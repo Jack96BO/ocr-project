@@ -1,0 +1,10 @@
+{
+    "cmake.sourceDirectory": "/workspaces/smartp_pen0/ocr_project",
+    "python-envs.pythonProjects": [
+        {
+            "path": "ocr_project",
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip"
+        }
+    ]
+}
