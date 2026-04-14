@@ -1,4 +1,3 @@
-from src.core.preprocessing import preprocess
 from src.core.postprocessing import clean_text
 
 class OCRPipeline:
@@ -6,7 +5,7 @@ class OCRPipeline:
         self.engine = engine
 
     def run(self, image):
-        processed = preprocess(image)
+        processed = self.engine.preprocess(image)
         raw_text = self.engine.extract(processed)
         final_text = clean_text(raw_text)
         return final_text

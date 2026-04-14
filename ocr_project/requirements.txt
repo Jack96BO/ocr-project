@@ -1,33 +1,20 @@
-# ===== CORE OCR =====
-paddlepaddle==2.6.2
-paddleocr==2.7.0.3
+paddlepaddle==3.3.1
+paddleocr==3.4.1
 
-# ===== NUMPY (CRITICO: NON AGGIORNARE!) =====
 numpy==1.26.4
-
-# ===== IMAGE PROCESSING =====
-opencv-python==4.6.0.66
-opencv-contrib-python==4.6.0.66
+opencv-python-headless==4.8.1.78
 Pillow==10.3.0
 
-# ===== SCIENTIFIC =====
-scipy==1.15.3
-
-# ===== PDF SUPPORT =====
+Flask==2.3.3
 pdf2image==1.17.0
-
-# ===== OCR DEPENDENCIES =====
-shapely==2.1.2
+pyspellchecker==0.7.2
 pyclipper==1.4.0
-lmdb==2.2.0
+lmdb==1.4.1
 imgaug==0.4.0
 scikit-image==0.25.2
 
-# ===== UTILS =====
 tqdm==4.66.4
-PyYAML==6.0.3
+PyYAML==6.0.2
 requests==2.33.1
-
-# ===== OPTIONAL (ma consigliati) =====
 matplotlib==3.10.8
 pandas==2.3.3
