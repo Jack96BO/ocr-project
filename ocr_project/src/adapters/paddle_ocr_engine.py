@@ -2,15 +2,14 @@
 from paddleocr import PaddleOCR
 import cv2
 import re
-import numpy as np
 from spellchecker import SpellChecker
-from src.config.settings import LANGUAGE
 
 class PaddleOCREngine:
-    def __init__(self):
+    def __init__(self, lang='en'):
         """Inizializza il motore OCR con parametri ottimizzati per testo generale."""
+        self.lang = lang
         self.ocr = PaddleOCR(
-            lang=LANGUAGE,
+            lang=lang,
             use_textline_orientation=True,
             text_det_thresh=0.15,          # Soglia detection (più sensibile)
             text_det_box_thresh=0.4,      # Soglia per i box di testo
@@ -19,129 +18,116 @@ class PaddleOCREngine:
             text_rec_score_thresh=0.3,     # Scarta risultati con confidenza bassa
             return_word_box=True
         )
-        self.spell = SpellChecker(language='it' if LANGUAGE == 'it' else 'en')  # Assumo italiano o inglese
+        # La correzione ortografica viene applicata solo in inglese.
+        self.spell = SpellChecker(language='en') if lang == 'en' else None
 
     def preprocess(self, image):
         """
-        Pre-processing avanzato per PaddleOCR.
-        Include deskew, denoising e miglioramento contrasto.
+        Pre-processing leggero: migliora leggibilità senza distruggere i dettagli.
         """
+        if image is None:
+            return image
+
         if len(image.shape) == 2:
             gray = image
         else:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        # Riduzione rumore con bilateral filter
-        gray = cv2.bilateralFilter(gray, 9, 75, 75)
+        # Riduzione rumore leggera.
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)
 
-        # Correzione inclinazione (deskew)
-        gray = self.deskew(gray)
-
-        # Ridimensionamento
-        gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-
-        # Miglioramento contrasto con CLAHE
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        # Migliora contrasto locale mantenendo i bordi dei caratteri.
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
 
-        # Thresholding adattivo per binarizzazione
-        gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+        # Upscale moderato solo per immagini piccole.
+        h, w = gray.shape[:2]
+        min_side = min(h, w)
+        if min_side < 900:
+            scale = 1.5
+            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
         return gray
 
-    def deskew(self, image):
-        """
-        Corregge l'inclinazione del testo nell'immagine.
-        """
-        coords = np.column_stack(np.where(image > 0))
-        angle = cv2.minAreaRect(coords)[-1]
-        if angle < -45:
-            angle = -(90 + angle)
-        else:
-            angle = -angle
-        (h, w) = image.shape[:2]
-        center = (w // 2, h // 2)
-        M = cv2.getRotationMatrix2D(center, angle, 1.0)
-        rotated = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-        return rotated
-
-    def clean_text(self, text):
-        """
-        Pulisce il testo OCR da errori comuni e caratteri indesiderati.
-        Include correzioni avanzate, normalizzazione e correzione ortografica.
-        """
-        text = text.lower()
-        corrections = {
-            "0": "o",
-            "1": "i",
-            "l": "i",
-            "|": "i",
-            "€": "e",
-            "5": "s",
-            "8": "b",
-            "6": "b",
-            "9": "g",
-            "2": "z",
-            "3": "e",
-            "4": "a",
-            "7": "t",
-            "q": "g",
-            "w": "u",
-            "x": "k"
-        }
-
-        for k, v in corrections.items():
-            text = text.replace(k, v)
-
-        # Rimuove caratteri non alfanumerici tranne spazi e punteggiatura base
-        text = re.sub(r'[^a-z0-9\s.,;:!?€$%&@"]', '', text)
-
-        # Normalizza spazi multipli
-        text = re.sub(r'\s+', ' ', text)
-
-        # Correzione ortografica parola per parola
-        words = text.split()
-        corrected_words = []
-        for word in words:
-            if word in self.spell:
-                corrected_words.append(word)
-            else:
-                candidates = self.spell.candidates(word)
-                if candidates:
-                    corrected_words.append(list(candidates)[0])  # Prendi il primo candidato
-                else:
-                    corrected_words.append(word)
-
-        text = ' '.join(corrected_words)
-
-        # Rimuove spazi iniziali/finali
-        return text.strip()
-
-    def extract(self, image):
-        """
-        Esegue l'OCR su un'immagine e restituisce il testo pulito con confidenza.
-        """
-        processed = self.preprocess(image)
-        result = self.ocr.predict(processed, use_textline_orientation=True, return_word_box=True)
+    def _extract_from_image(self, image):
+        """Esegue OCR su una singola variante d'immagine."""
+        result = self.ocr.ocr(image, cls=False)
 
         if not result:
             return []
 
+        # paddleocr.ocr per singola immagine restituisce normalmente [lines].
+        lines = result[0] if isinstance(result, list) and result and isinstance(result[0], list) else result
+        if lines is None:
+            return []
+
         texts = []
-        for line in result:
-            if not line:
+        for word_info in lines:
+            if not word_info or not isinstance(word_info, (list, tuple)) or len(word_info) < 2:
                 continue
-            for word_info in line:
-                if not word_info:
-                    continue
-                try:
-                    text = word_info[1][0]
-                    confidence = word_info[1][1]
-                    if confidence < 0.5:  # Ignora risultati con confidenza bassa
-                        continue
-                    text = self.clean_text(text)
-                    if len(text) > 1:  # Ignora stringhe troppo corte
-                        texts.append((text, confidence))
-                except (IndexError, TypeError):
-                    continue
+
+            rec_info = word_info[1]
+            if not isinstance(rec_info, (list, tuple)) or len(rec_info) < 2:
+                continue
+
+            try:
+                text = str(rec_info[0])
+                confidence = float(rec_info[1])
+            except (TypeError, ValueError):
+                continue
+
+            if confidence < 0.3:
+                continue
+
+            cleaned = self.clean_text(text)
+            if cleaned:
+                texts.append((cleaned, confidence))
+
         return texts
+
+    def clean_text(self, text):
+        """
+        Pulisce il testo OCR senza perdere caratteri di alfabeti non latini.
+        """
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        # Correzione leggera solo su parole ASCII in inglese.
+        if self.spell is not None and text:
+            words = text.split()
+            corrected_words = []
+            for word in words:
+                if not word.isascii() or not word.isalpha() or len(word) <= 2:
+                    corrected_words.append(word)
+                    continue
+
+                if word.lower() in self.spell:
+                    corrected_words.append(word)
+                    continue
+
+                candidates = self.spell.candidates(word.lower())
+                corrected_words.append(next(iter(candidates), word))
+
+            text = ' '.join(corrected_words)
+
+        return text
+
+    def extract(self, image):
+        """
+        Esegue OCR in due passaggi (originale + preprocess) e sceglie il risultato migliore.
+        """
+        if image is None:
+            return []
+
+        original_texts = self._extract_from_image(image)
+        processed = self.preprocess(image)
+        processed_texts = self._extract_from_image(processed) if processed is not None else []
+
+        def score(candidates):
+            if not candidates:
+                return 0.0
+            conf_sum = sum(conf for _, conf in candidates)
+            char_count = sum(len(text) for text, _ in candidates)
+            # privilegia testo più ricco ma con buona confidenza media
+            return conf_sum + (0.02 * char_count)
+
+        return processed_texts if score(processed_texts) > score(original_texts) else original_texts

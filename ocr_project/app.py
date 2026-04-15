@@ -20,9 +20,22 @@ os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
 logger = get_logger()
 
-# Inizializza l'engine OCR
-engine = PaddleOCREngine()
-pipeline = OCRPipeline(engine)
+SUPPORTED_LANGUAGES = {'en', 'it', 'ar', 'ru', 'es', 'fr', 'latin'}
+
+
+def resolve_lang(lang: str) -> str:
+    """Normalizza il codice lingua scelto dall'utente per PaddleOCR."""
+    if not lang:
+        return 'latin'
+
+    selected = lang.strip().lower()
+    if selected == 'auto':
+        return 'latin'
+    if selected == 'multi':
+        return 'latin'
+    if selected in SUPPORTED_LANGUAGES:
+        return selected
+    return 'latin'
 
 @app.route('/')
 def index():
@@ -32,6 +45,10 @@ def index():
 def upload_file():
     if 'files' not in request.files:
         return render_template('index.html', error='Nessun file selezionato')
+
+    lang = resolve_lang(request.form.get('lang', 'en'))
+    engine = PaddleOCREngine(lang=lang)
+    pipeline = OCRPipeline(engine)
 
     files = request.files.getlist('files')
     results = []
@@ -93,6 +110,10 @@ def upload_file():
 def api_ocr():
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
+
+    lang = resolve_lang(request.form.get('lang', 'en') or request.args.get('lang', 'en'))
+    engine = PaddleOCREngine(lang=lang)
+    pipeline = OCRPipeline(engine)
 
     file = request.files['file']
     if file.filename == '':

@@ -60,6 +60,18 @@
         <form action="/upload" method="post" enctype="multipart/form-data">
             <input type="file" name="files" accept="image/*,.pdf" multiple required>
             <br>
+            <label for="lang">Lingua:</label>
+            <select name="lang" id="lang">
+                <option value="auto" selected>Auto (consigliato)</option>
+                <option value="en">Inglese</option>
+                <option value="it">Italiano</option>
+                <option value="ar">Arabo</option>
+                <option value="ru">Russo</option>
+                <option value="es">Spagnolo</option>
+                <option value="fr">Francese</option>
+                <option value="multi">Tutte (multi-lingua)</option>
+            </select>
+            <br>
             <button type="submit">Carica ed Estrai Testo</button>
         </form>
         {% if results %}

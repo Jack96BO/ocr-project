@@ -8,3 +8,4 @@ __pycache__/
 output/
 inference_results/
 log_output/
+uploads/
