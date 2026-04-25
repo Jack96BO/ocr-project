@@ -10,20 +10,37 @@ class PaddleOCREngine:
         self.lang = lang
         self.ocr = PaddleOCR(
             lang=lang,
-            use_textline_orientation=True,
-            text_det_thresh=0.15,          # Soglia detection (più sensibile)
-            text_det_box_thresh=0.4,      # Soglia per i box di testo
-            text_det_unclip_ratio=2.2,    # Miglior gestione dei bordi
-            text_recognition_batch_size=6, # Batch size per prestazioni
-            text_rec_score_thresh=0.3,     # Scarta risultati con confidenza bassa
+            use_angle_cls=False,
+            cls_model_dir=None,            # Disabilita classificazione per evitare download corrotto
+            det_db_thresh=0.25,
+            det_db_box_thresh=0.3,
+            det_db_unclip_ratio=2.5,
+            rec_batch_num=6,
+            drop_score=0.15,
             return_word_box=True
         )
-        # La correzione ortografica viene applicata solo in inglese.
-        self.spell = SpellChecker(language='en') if lang == 'en' else None
+        # Correzione ortografica per lingue supportate
+        # pyspellchecker supporta: en, es, fr, de, pt (no italiano)
+        try:
+            if lang == 'en':
+                self.spell = SpellChecker(language='en')
+            elif lang == 'es':
+                self.spell = SpellChecker(language='es')
+            elif lang == 'fr':
+                self.spell = SpellChecker(language='fr')
+            elif lang == 'de':
+                self.spell = SpellChecker(language='de')
+            elif lang == 'pt':
+                self.spell = SpellChecker(language='pt')
+            else:
+                self.spell = None
+        except (ValueError, Exception):
+            # Se la lingua non è supportata, disabilita spell check
+            self.spell = None
 
     def preprocess(self, image):
         """
-        Pre-processing leggero: migliora leggibilità senza distruggere i dettagli.
+        Pre-processing conservativo: migliora contrasto senza binarizzazione aggressiva.
         """
         if image is None:
             return image
@@ -33,17 +50,20 @@ class PaddleOCREngine:
         else:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        # Riduzione rumore leggera.
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+        # Denoise bilaterale (mantiene bordi, riduce rumore)
+        gray = cv2.bilateralFilter(gray, 5, 50, 50)
 
-        # Migliora contrasto locale mantenendo i bordi dei caratteri.
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        # Contrasto adattivo (CLAHE) moderato
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
 
-        # Upscale moderato solo per immagini piccole.
+        # Upscale moderato solo per immagini piccole
         h, w = gray.shape[:2]
         min_side = min(h, w)
-        if min_side < 900:
+        if min_side < 600:
+            scale = 2.0
+            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        elif min_side < 900:
             scale = 1.5
             gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
@@ -76,7 +96,7 @@ class PaddleOCREngine:
             except (TypeError, ValueError):
                 continue
 
-            if confidence < 0.3:
+            if confidence < 0.15:
                 continue
 
             cleaned = self.clean_text(text)
@@ -87,25 +107,44 @@ class PaddleOCREngine:
 
     def clean_text(self, text):
         """
-        Pulisce il testo OCR senza perdere caratteri di alfabeti non latini.
+        Pulisce e corregge il testo OCR con correzioni post-OCR e spell check.
         """
         text = re.sub(r'\s+', ' ', text).strip()
 
-        # Correzione leggera solo su parole ASCII in inglese.
+        # Correzioni comuni di errori OCR
+        text = text.replace("'rno", "rno")     # apostrofo spurio
+        text = text.replace("'o", "o")         # apostrofo spurio
+        text = text.replace("won", "buon")     # w->b + correzione u
+        text = text.replace("Wn", "Buon")      # maiuscola
+        text = text.replace("bongiorno", "buongiorno")  # correzione specifica comune
+        
+        # Rimuovi apostrofi isolati in mezzo alle parole
+        text = re.sub(r"(\w)'(\w)", r"\1\2", text)
+        
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        # Correzione ortografica con spell checker (solo per lingue supportate)
         if self.spell is not None and text:
             words = text.split()
             corrected_words = []
             for word in words:
-                if not word.isascii() or not word.isalpha() or len(word) <= 2:
+                # Salta parole troppo corte, numeri, caratteri speciali
+                if len(word) <= 2 or not any(c.isalpha() for c in word):
                     corrected_words.append(word)
                     continue
 
-                if word.lower() in self.spell:
+                # Estrai solo lettere per il controllo
+                alpha_only = ''.join(c for c in word if c.isalpha())
+                if alpha_only.lower() in self.spell or len(alpha_only) <= 2:
                     corrected_words.append(word)
                     continue
 
-                candidates = self.spell.candidates(word.lower())
-                corrected_words.append(next(iter(candidates), word))
+                candidates = self.spell.candidates(alpha_only.lower())
+                if candidates:
+                    best = min(candidates, key=lambda x: abs(len(x) - len(alpha_only)))
+                    corrected_words.append(best)
+                else:
+                    corrected_words.append(word)
 
             text = ' '.join(corrected_words)
 

@@ -1,5 +1,5 @@
-paddlepaddle==3.3.1
-paddleocr==3.4.1
+paddlepaddle==2.6.2
+paddleocr==2.8.1
 
 numpy==1.26.4
 opencv-python-headless==4.8.1.78

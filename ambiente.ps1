@@ -13,7 +13,8 @@
 param(
     [string]$PythonVersion = "3.10",
     [string]$VenvName      = "venv310",
-    [string]$ProjectDir    = $PSScriptRoot
+    [string]$ProjectDir    = $PSScriptRoot,
+    [switch]$Docker                            # Se presente, costruisce ed avvia il container Docker
 )
 
 Set-StrictMode -Version Latest
@@ -210,14 +211,75 @@ foreach ($check in $checks) {
 }
 
 # ---------------------------------------------------------------------------
-# 7. Riepilogo
+# 7. Docker (opzionale — usa -Docker per attivare)
+# ---------------------------------------------------------------------------
+if ($Docker) {
+    Write-Step "Build & avvio container Docker (porta 9894)"
+
+    if (-not (Test-CommandExists "docker")) {
+        Write-Fail "Docker non trovato. Installa Docker Desktop: https://www.docker.com/products/docker-desktop"
+        exit 1
+    }
+
+    $composeFile = Join-Path $ProjectDir "docker-compose.yml"
+    $dockerfilePath = Join-Path $ProjectDir "Dockerfile"
+
+    if (-not (Test-Path $dockerfilePath)) {
+        Write-Fail "Dockerfile non trovato in $dockerfilePath"
+        exit 1
+    }
+
+    if (Test-CommandExists "docker-compose") {
+        Write-OK "Trovato docker-compose"
+        Set-Location $ProjectDir
+        & docker-compose up --build -d
+    } elseif ((& docker compose version 2>&1) -match "compose") {
+        Write-OK "Trovato docker compose (plugin)"
+        Set-Location $ProjectDir
+        & docker compose up --build -d
+    } else {
+        Write-Warn "docker-compose non trovato: eseguo build manuale"
+        & docker build -t ocr-project:latest $ProjectDir
+        & docker run -d --name ocr-project -p 9894:9894 `
+            -v ocr_output:/app/data/output `
+            --restart unless-stopped `
+            ocr-project:latest
+    }
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "Container avviato! Applicazione disponibile su http://localhost:9894"
+    } else {
+        Write-Fail "Errore durante l'avvio del container."
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "============================================" -ForegroundColor Cyan
+    Write-Host "  Container Docker attivo!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Comandi utili:" -ForegroundColor White
+    Write-Host "    docker logs ocr-project -f          -> log in tempo reale" -ForegroundColor Yellow
+    Write-Host "    docker stop ocr-project             -> ferma il container" -ForegroundColor Yellow
+    Write-Host "    docker compose down                 -> ferma e rimuove il container" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Endpoint disponibili su http://localhost:9894:" -ForegroundColor White
+    Write-Host "    GET  /                  -> Interfaccia web" -ForegroundColor Gray
+    Write-Host "    POST /upload            -> Upload web (multifile)" -ForegroundColor Gray
+    Write-Host "    POST /api/ocr           -> API singola immagine" -ForegroundColor Gray
+    Write-Host "    POST /api/ocr/batch     -> API batch multi-immagine" -ForegroundColor Gray
+    Write-Host "============================================" -ForegroundColor Cyan
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
+# 7. Riepilogo (ambiente locale)
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
 if ($allOK) {
     Write-Host "  Ambiente pronto!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  Per avviare il progetto:" -ForegroundColor White
+    Write-Host "  Per avviare il progetto in locale:" -ForegroundColor White
     if ($IsWin) {
         Write-Host "    $VenvName\Scripts\activate" -ForegroundColor Yellow
     } else {
@@ -225,7 +287,12 @@ if ($allOK) {
     }
     Write-Host "    python ocr_project/app.py" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  Endpoint disponibili su http://localhost:5000:" -ForegroundColor White
+    Write-Host "  Per avviare con Docker (porta 9894):" -ForegroundColor White
+    Write-Host "    .\ambiente.ps1 -Docker" -ForegroundColor Yellow
+    Write-Host "  oppure manualmente:" -ForegroundColor White
+    Write-Host "    docker compose up --build -d" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Endpoint disponibili su http://localhost:9894:" -ForegroundColor White
     Write-Host "    GET  /                  -> Interfaccia web" -ForegroundColor Gray
     Write-Host "    POST /upload            -> Upload web (multifile)" -ForegroundColor Gray
     Write-Host "    POST /api/ocr           -> API singola immagine" -ForegroundColor Gray

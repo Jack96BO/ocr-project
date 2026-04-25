@@ -1,0 +1,37 @@
+# Git
+.git/
+.gitignore
+
+# Virtual environments
+venv*/
+env/
+.venv/
+
+# Byte-compiled / cache Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Build artifacts (CMake)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.dir/
+
+# Dati di test / output locali
+ocr_project/data/uploads/
+ocr_project/data/output/
+
+# File di log
+*.log
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Documentazione extra
+*.md
+!ocr_project/README.md

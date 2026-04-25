@@ -13,6 +13,7 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'data/uploads'
 app.config['OUTPUT_FOLDER'] = 'data/output'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
 # Assicurati che le cartelle esistano
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -45,6 +46,10 @@ def process_uploaded_file(uploaded_file, pipeline):
     uploaded_file.save(filepath)
 
     try:
+        # Verifica dimensioni file
+        file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+        logger.info(f"File caricato: {filename} ({file_size_mb:.2f} MB)")
+        
         with open(filepath, 'rb') as f:
             file_data = f.read()
             md5_hash = hashlib.md5(file_data).hexdigest()
@@ -58,6 +63,12 @@ def process_uploaded_file(uploaded_file, pipeline):
             text = "\n".join(texts)
         else:
             image = load_image(filepath)
+            if image is None:
+                logger.error(f"Impossibile caricare l'immagine: {filename}")
+                return {'filename': filename, 'text': 'ERRORE: immagine non valida', 'error': True}
+            
+            img_h, img_w = image.shape[:2]
+            logger.info(f"Immagine caricata: {img_w}x{img_h}px")
             text = pipeline.run(image)
 
         result_data = {
@@ -74,6 +85,9 @@ def process_uploaded_file(uploaded_file, pipeline):
             json.dump(result_data, f, ensure_ascii=False, indent=4)
 
         return result_data
+    except Exception as e:
+        logger.error(f"Errore processing {filename}: {str(e)}", exc_info=True)
+        raise
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
@@ -166,4 +180,4 @@ def api_ocr_batch():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=9894, threaded=True)

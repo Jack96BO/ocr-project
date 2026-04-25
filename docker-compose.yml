@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  ocr-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ocr-project:latest
+    container_name: ocr-project
+    ports:
+      - "9894:9894"
+    volumes:
+      # Persiste i risultati JSON anche dopo il riavvio del container
+      - ocr_output:/app/data/output
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9894/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ocr_output:
